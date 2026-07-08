@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NutriMind AI — Personalised Indian Diet Planner</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<!-- ===================== AUTH VIEW ===================== -->
+<div id="authView" class="auth-wrap">
+  <div class="auth-card">
+    <div class="brand">
+      <div class="logo">🌿</div>
+      <h1>NutriMind AI</h1>
+      <p>Region-aware, AI-assisted Indian diet planning</p>
+    </div>
+    <div class="card">
+      <div class="tabs">
+        <button id="tabLogin" class="active" onclick="App.showTab('login')">Login</button>
+        <button id="tabRegister" onclick="App.showTab('register')">Register</button>
+      </div>
+
+      <form id="loginForm" onsubmit="return App.login(event)">
+        <label>Email</label>
+        <input id="loginEmail" type="email" required placeholder="you@email.com">
+        <label>Password</label>
+        <input id="loginPassword" type="password" required placeholder="••••••••">
+        <button type="submit" style="width:100%;margin-top:16px">Login</button>
+      </form>
+
+      <form id="registerForm" class="hidden" onsubmit="return App.register(event)">
+        <label>Full name</label>
+        <input id="regName" required placeholder="e.g. Harsha">
+        <label>Email</label>
+        <input id="regEmail" type="email" required placeholder="you@email.com">
+        <label>Password (min 6 chars)</label>
+        <input id="regPassword" type="password" required minlength="6" placeholder="choose a password">
+        <button type="submit" style="width:100%;margin-top:16px">Create account</button>
+      </form>
+
+      <div id="authMsg"></div>
+    </div>
+    <p class="muted" style="text-align:center">Your data stays on this machine (local SQLite).</p>
+  </div>
+</div>
+
+<!-- ===================== APP SHELL ===================== -->
+<div id="appView" class="hidden">
+  <div class="topbar">
+    <div class="logo">🌿 NutriMind AI</div>
+    <nav class="nav" id="nav">
+      <a data-view="dashboard" class="active" onclick="App.go('dashboard')">Dashboard</a>
+      <a data-view="profile" onclick="App.go('profile')">Profile</a>
+      <a data-view="plan" onclick="App.go('plan')">Meal Plan</a>
+      <a data-view="preferences" onclick="App.go('preferences')">Preferences</a>
+      <a data-view="recipe" onclick="App.go('recipe')">Recipe</a>
+      <a data-view="tracker" onclick="App.go('tracker')">Tracker</a>
+      <a data-view="reviews" onclick="App.go('reviews')">Reviews</a>
+    </nav>
+    <div class="userbox">
+      <div class="avatar" id="avatar">U</div>
+      <span class="uname" id="uname">User</span>
+      <button class="ghost" onclick="App.logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard">
+      <div class="card">
+        <h2 id="welcome">Welcome 👋</h2>
+        <p class="sub" id="aiBadge"></p>
+        <div class="stats" id="dashStats"></div>
+      </div>
+      <div id="dashNoProfile" class="card hidden">
+        <h2>Complete your profile</h2>
+        <p class="sub">Add your biometrics to unlock BMI, calorie targets and personalised meal plans.</p>
+        <button onclick="App.go('profile')">Go to Profile →</button>
+      </div>
+      <div id="dashProfile" class="card hidden">
+        <h2>Your snapshot</h2>
+        <div id="snapshot"></div>
+        <div class="flex" style="margin-top:14px">
+          <button onclick="App.go('plan')">Generate meal plan</button>
+          <button class="secondary" onclick="App.go('tracker')">Log today</button>
+          <button class="secondary" onclick="App.go('recipe')">Find a recipe</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROFILE -->
+    <section id="view-profile" class="hidden">
+      <div class="card">
+        <h2>Your Profile</h2>
+        <p class="sub">Used to compute BMI (WHO), BMR (Mifflin-St Jeor) and your daily calorie target.</p>
+        <form id="profileForm" onsubmit="return App.saveProfile(event)">
+          <div class="row">
+            <div><label>Date of birth</label><input id="pf_dob" type="date"></div>
+            <div><label>Sex</label>
+              <select id="pf_sex"><option value="male">Male</option><option value="female">Female</option></select>
+            </div>
+          </div>
+          <div class="row">
+            <div><label>Height (cm)</label><input id="pf_height" type="number" step="0.1" value="170"></div>
+            <div><label>Weight (kg)</label><input id="pf_weight" type="number" step="0.1" value="70"></div>
+          </div>
+          <label>Activity level</label>
+          <select id="pf_activity">
+            <option value="sedentary">Sedentary (no exercise)</option>
+            <option value="light">Lightly active (1-3 days/wk)</option>
+            <option value="moderate" selected>Moderately active (3-5 days/wk)</option>
+            <option value="very">Very active (6-7 days/wk)</option>
+            <option value="extra">Extra active (physical job)</option>
+          </select>
+          <label>Goal
+            <button type="button" class="ghost" style="float:right;padding:2px 8px"
+              onclick="App.aiSuggestGoal()">🤖 AI suggest</button>
+          </label>
+          <select id="pf_goal">
+            <option value="lose">Lose weight</option>
+            <option value="maintain" selected>Maintain</option>
+            <option value="gain">Gain weight</option>
+          </select>
+          <p id="goalHint" class="muted hidden"></p>
+          <div class="row">
+            <div><label>Dietary preference</label>
+              <select id="pf_diet">
+                <option value="veg">Vegetarian</option>
+                <option value="nonveg">Non-vegetarian</option>
+                <option value="vegan">Vegan</option>
+              </select>
+            </div>
+            <div><label>Region of India</label>
+              <select id="pf_region">
+                <option>North</option><option selected>South</option>
+                <option>East</option><option>West</option><option value="Pan-India">Pan-India</option>
+              </select>
+            </div>
+          </div>
+          <label>Allergies / notes (optional)</label>
+          <input id="pf_allergies" placeholder="e.g. lactose intolerant, no peanuts">
+          <button type="submit" style="margin-top:18px">Save & recalculate</button>
+          <div id="profileMsg"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- MEAL PLAN -->
+    <section id="view-plan" class="hidden">
+      <div class="card">
+        <h2>Your Day Meal Plan</h2>
+        <p class="sub">Built from foods local to your region & diet, scaled to your calorie target.</p>
+        <div class="flex">
+          <button onclick="App.generatePlan()">Generate plan</button>
+          <button class="secondary" onclick="App.generatePlan(true)">🔄 Regenerate</button>
+          <span id="planPill"></span>
+        </div>
+      </div>
+      <div id="planResult" class="hidden">
+        <div class="card">
+          <div class="stats" id="planStats"></div>
+          <table id="planTable">
+            <thead><tr><th>Meal</th><th>Dish</th><th>Serving</th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead>
+            <tbody></tbody>
+            <tfoot><tr><td colspan="3">Daily total</td><td id="tk"></td><td id="tp"></td><td id="tc"></td><td id="tf"></td></tr></tfoot>
+          </table>
+          <p class="muted" id="planAcc"></p>
+        </div>
+        <div class="card">
+          <h2>AI Recipe &amp; Nutrition Guidance</h2>
+          <div class="guide" id="planGuide">…</div>
+          <div class="src" id="planSrc"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PREFERENCES -->
+    <section id="view-preferences" class="hidden">
+      <div class="card">
+        <h2>Food Preferences</h2>
+        <p class="sub">Tap a card to cycle: <b>neutral → like → dislike</b>. Likes are favoured and dislikes are avoided in your meal plans.</p>
+        <div class="cardgrid" id="prefGrid"></div>
+        <button style="margin-top:18px" onclick="App.savePrefs()">Save preferences</button>
+        <div id="prefMsg"></div>
+      </div>
+    </section>
+
+    <!-- RECIPE -->
+    <section id="view-recipe" class="hidden">
+      <div class="card">
+        <h2>Healthy Recipe Generator</h2>
+        <p class="sub">Type a dish — the AI returns its healthiest version, scaled to your body and serving count.</p>
+        <label>What do you want to cook?</label>
+        <div class="flex">
+          <input id="recDish" class="grow" placeholder="e.g. paneer butter masala, masala dosa, egg curry"
+            onkeydown="if(event.key==='Enter')App.makeRecipe()">
+          <div class="stepper">
+            <button type="button" onclick="App.bumpServings(-1)">−</button>
+            <span class="num" id="servings">1</span>
+            <button type="button" onclick="App.bumpServings(1)">+</button>
+          </div>
+          <button onclick="App.makeRecipe()">Generate</button>
+        </div>
+        <p class="muted">Servings = number of people.</p>
+      </div>
+      <div id="recipeResult" class="hidden card"></div>
+      <div class="card">
+        <h2>Recent recipes</h2>
+        <ul class="reclist" id="recentRecipes"><li class="muted">None yet.</li></ul>
+      </div>
+    </section>
+
+    <!-- TRACKER -->
+    <section id="view-tracker" class="hidden">
+      <div class="card">
+        <h2>Goal Tracker</h2>
+        <p class="sub">Jot down today's activity & meals. The AI summarises it and scores your day 1–10.</p>
+        <label>Today's note</label>
+        <textarea id="logNote" placeholder="e.g. 30 min jog, ate dosa + sambar, skipped fried snacks, drank 3L water"></textarea>
+        <div class="row">
+          <div><label>Weight today (kg, optional)</label><input id="logWeight" type="number" step="0.1"></div>
+          <div style="display:flex;align-items:flex-end"><button style="width:100%" onclick="App.addLog()">Summarise & save</button></div>
+        </div>
+        <div id="logMsg"></div>
+      </div>
+      <div class="card">
+        <h2>Activity trend</h2>
+        <div class="bars" id="trackerBars"></div>
+        <p class="muted" id="trackerAvg"></p>
+      </div>
+      <div class="card">
+        <h2>History</h2>
+        <div id="logHistory"><p class="muted">No entries yet.</p></div>
+      </div>
+    </section>
+
+    <!-- REVIEWS -->
+    <section id="view-reviews" class="hidden">
+      <div class="card">
+        <h2>Leave a review</h2>
+        <p class="sub">Tell us how a feature worked for you.</p>
+        <label>Feature</label>
+        <select id="revFeature">
+          <option>Meal Plan</option><option>Recipe Generator</option>
+          <option>Goal Tracker</option><option>Food Preferences</option><option>Overall</option>
+        </select>
+        <label>Rating</label>
+        <div class="stars" id="revStars"></div>
+        <label>Comment</label>
+        <textarea id="revComment" placeholder="What did you like or want improved?"></textarea>
+        <button style="margin-top:14px" onclick="App.addReview()">Submit review</button>
+        <div id="revMsg"></div>
+      </div>
+      <div class="card">
+        <h2>Recent reviews</h2>
+        <div id="reviewList"><p class="muted">No reviews yet.</p></div>
+      </div>
+    </section>
+
+  </div>
+  <footer>NutriMind AI · BITS Pilani Dissertation · Nutrition data referenced to IFCT 2017 (NIN/ICMR)</footer>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

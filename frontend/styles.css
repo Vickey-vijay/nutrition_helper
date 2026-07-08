@@ -1,0 +1,135 @@
+/* NutriMind AI — design system & layout */
+:root{
+  --green:#1f8a4c; --green-dark:#14633a; --green-soft:#e8f5ec;
+  --bg:#f4f7f2; --card:#ffffff; --ink:#1d2a22; --muted:#6b7d72;
+  --accent:#ff8a3d; --accent-soft:#fff2e6; --line:#e3ebe4;
+  --danger:#d64545; --danger-soft:#fdecec; --ok:#1f8a4c;
+  --radius:14px; --shadow:0 2px 14px rgba(20,60,40,.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;
+  background:var(--bg);color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--green-dark);text-decoration:none}
+.hidden{display:none !important}
+
+/* ---------- Buttons & inputs ---------- */
+button{font:inherit;cursor:pointer;border:0;border-radius:9px;padding:11px 16px;
+  background:var(--green);color:#fff;font-weight:600;transition:.15s}
+button:hover{background:var(--green-dark)}
+button.secondary{background:#fff;color:var(--green-dark);border:1px solid var(--line)}
+button.secondary:hover{background:var(--green-soft)}
+button.ghost{background:transparent;color:var(--muted);padding:6px 10px}
+button:disabled{opacity:.55;cursor:not-allowed}
+label{display:block;font-size:.8rem;color:var(--muted);margin:12px 0 5px;font-weight:600}
+input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);
+  border-radius:9px;font:inherit;background:#fbfdfb;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--green-soft);border-color:var(--green)}
+textarea{resize:vertical;min-height:90px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:560px){.row,.row3{grid-template-columns:1fr}}
+
+/* ---------- Cards ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px;box-shadow:var(--shadow);margin-bottom:18px}
+.card h2{margin:0 0 4px;font-size:1.18rem;color:var(--green-dark)}
+.card .sub{color:var(--muted);font-size:.88rem;margin:0 0 16px}
+
+/* ---------- Auth ---------- */
+.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:radial-gradient(1200px 500px at 50% -10%,var(--green-soft),var(--bg))}
+.auth-card{width:100%;max-width:410px}
+.brand{text-align:center;margin-bottom:18px}
+.brand .logo{font-size:2.1rem}
+.brand h1{margin:6px 0 2px;font-size:1.5rem;color:var(--green-dark)}
+.brand p{margin:0;color:var(--muted);font-size:.85rem}
+.tabs{display:flex;background:var(--green-soft);border-radius:10px;padding:4px;margin-bottom:6px}
+.tabs button{flex:1;background:transparent;color:var(--muted);padding:9px}
+.tabs button.active{background:#fff;color:var(--green-dark);box-shadow:var(--shadow)}
+.msg{font-size:.85rem;padding:9px 12px;border-radius:8px;margin-top:12px}
+.msg.err{background:var(--danger-soft);color:var(--danger)}
+.msg.ok{background:var(--green-soft);color:var(--green-dark)}
+
+/* ---------- App shell ---------- */
+.topbar{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:18px;padding:12px 22px}
+.topbar .logo{font-weight:700;color:var(--green-dark);font-size:1.1rem;white-space:nowrap}
+.nav{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+.nav a{padding:8px 13px;border-radius:8px;color:var(--muted);font-weight:600;font-size:.9rem}
+.nav a:hover{background:var(--green-soft);color:var(--green-dark)}
+.nav a.active{background:var(--green);color:#fff}
+.userbox{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.userbox .uname{font-weight:600;font-size:.9rem}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--green);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:700}
+.container{max-width:980px;margin:22px auto;padding:0 18px}
+@media(max-width:680px){.topbar{flex-wrap:wrap}.nav{order:3;width:100%}}
+
+/* ---------- Stats ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:680px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--green-soft);border-radius:12px;padding:16px;text-align:center}
+.stat .v{font-size:1.7rem;font-weight:800;color:var(--green-dark);line-height:1.1}
+.stat .l{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+.pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:.76rem;font-weight:700}
+.pill.green{background:var(--green-soft);color:var(--green-dark)}
+.pill.orange{background:var(--accent-soft);color:#c25b10}
+.pill.gray{background:#eef2ef;color:var(--muted)}
+
+/* ---------- Table ---------- */
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.92rem}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:700;font-size:.74rem;text-transform:uppercase;letter-spacing:.4px}
+.slot{font-weight:700;color:var(--green-dark);text-transform:capitalize}
+tfoot td{font-weight:800;border-top:2px solid var(--line)}
+
+/* ---------- Guidance / recipe ---------- */
+.guide{white-space:pre-wrap;background:#f7faf6;border-radius:11px;padding:16px;
+  font-size:.92rem;border:1px dashed var(--line)}
+.src{font-size:.74rem;color:var(--muted);margin-top:8px}
+.reclist{list-style:none;padding:0;margin:8px 0}
+.reclist li{padding:7px 0;border-bottom:1px solid var(--line);font-size:.93rem}
+.tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+
+/* ---------- Food preference cards ---------- */
+.cardgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;margin-top:8px}
+.foodcard{border:2px solid var(--line);border-radius:13px;padding:14px 8px;text-align:center;
+  cursor:pointer;user-select:none;transition:.12s;background:#fff}
+.foodcard:hover{border-color:var(--green)}
+.foodcard .emo{font-size:1.9rem;display:block}
+.foodcard .lab{font-size:.82rem;font-weight:600;margin-top:6px}
+.foodcard .state{font-size:.68rem;margin-top:5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.foodcard.like{border-color:var(--green);background:var(--green-soft)}
+.foodcard.like .state{color:var(--green-dark)}
+.foodcard.dislike{border-color:var(--danger);background:var(--danger-soft)}
+.foodcard.dislike .state{color:var(--danger)}
+
+/* ---------- Stepper ---------- */
+.stepper{display:inline-flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.stepper button{background:#fff;color:var(--green-dark);padding:9px 14px;border-radius:0}
+.stepper button:hover{background:var(--green-soft)}
+.stepper .num{padding:0 16px;font-weight:700;min-width:42px;text-align:center}
+
+/* ---------- Tracker bars ---------- */
+.bars{display:flex;align-items:flex-end;gap:6px;height:90px;margin-top:10px}
+.bars .bar{flex:1;background:var(--green);border-radius:5px 5px 0 0;min-height:4px;position:relative}
+.bars .bar span{position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:.7rem;color:var(--muted)}
+.logitem{border:1px solid var(--line);border-radius:11px;padding:13px;margin-top:10px}
+.logitem .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.logitem .date{font-size:.78rem;color:var(--muted)}
+.score{font-weight:800;color:#fff;background:var(--green);border-radius:8px;padding:3px 10px;font-size:.82rem}
+.score.low{background:var(--accent)}
+
+/* ---------- Stars ---------- */
+.stars{display:inline-flex;gap:4px;font-size:1.5rem;cursor:pointer}
+.stars .st{color:#d7e0d8}
+.stars .st.on{color:#f4b400}
+
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid #ffffff80;
+  border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.muted{color:var(--muted);font-size:.88rem}
+footer{text-align:center;color:var(--muted);font-size:.78rem;padding:22px}
+.flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1}
