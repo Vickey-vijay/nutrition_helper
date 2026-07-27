@@ -2,6 +2,11 @@
 const App = (() => {
   const $ = id => document.getElementById(id);
   const TOKEN_KEY = 'nm_token';
+  // HTML-escape any user- or AI-supplied text before it goes into innerHTML —
+  // reviews, tracker notes and recipe text all round-trip free-form strings
+  // through here, so this is not optional.
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let state = {
     token: localStorage.getItem(TOKEN_KEY) || null,
     user: null, profile: null, metrics: null,
@@ -21,6 +26,9 @@ const App = (() => {
     return data;
   }
 
+  // `text` may intentionally contain trusted markup (e.g. a spinner span) —
+  // callers are responsible for esc()-ing any untrusted value they interpolate
+  // into it before calling flash().
   function flash(el, text, kind = 'err') {
     if (!text) { el.innerHTML = ''; return; }
     el.innerHTML = `<div class="msg ${kind}">${text}</div>`;
@@ -120,8 +128,8 @@ const App = (() => {
       const p = state.profile;
       $('snapshot').innerHTML =
         `<div class="tags">
-          <span class="pill green">${p.region} · ${p.diet}</span>
-          <span class="pill orange">Goal: ${p.goal}</span>
+          <span class="pill green">${esc(p.region)} · ${esc(p.diet)}</span>
+          <span class="pill orange">Goal: ${esc(p.goal)}</span>
           <span class="pill gray">${p.height_cm} cm · ${p.weight_kg} kg · age ${p.age}</span>
           <span class="pill gray">BMR ${m.bmr} · TDEE ${m.tdee} kcal</span>
         </div>
@@ -173,7 +181,7 @@ const App = (() => {
       await saveProfileSilently();
       const d = await api('POST', '/api/suggest-goal');
       $('pf_goal').value = d.suggestion.goal;
-      hint.innerHTML = `🤖 <b>${d.suggestion.goal}</b> — ${d.suggestion.rationale} <span class="src">(${d.suggestion.source})</span>`;
+      hint.innerHTML = `🤖 <b>${esc(d.suggestion.goal)}</b> — ${esc(d.suggestion.rationale)} <span class="src">(${esc(d.suggestion.source)})</span>`;
     } catch (err) { hint.textContent = err.message; }
   }
   async function saveProfileSilently() {
@@ -206,10 +214,24 @@ const App = (() => {
     const m = d.metrics, pl = d.plan;
     $('planStats').innerHTML = stat(m.bmi, 'BMI') + stat(m.bmi_category, 'Category')
       + stat(pl.target_calories, 'Target kcal') + stat(pl.calorie_accuracy_pct + '%', 'Plan accuracy');
+    // A meal is a plate of several dishes, so rows are grouped under their
+    // slot: the slot name is printed once and the dishes listed beneath it.
     const tb = $('planTable').querySelector('tbody'); tb.innerHTML = '';
-    pl.meals.forEach(me => tb.insertAdjacentHTML('beforeend',
-      `<tr><td class="slot">${me.slot}</td><td>${me.name}</td><td>${me.grams} g</td>
-        <td>${me.kcal}</td><td>${me.protein_g}</td><td>${me.carb_g}</td><td>${me.fat_g}</td></tr>`));
+    let lastSlot = null;
+    pl.meals.forEach(me => {
+      const newSlot = me.slot !== lastSlot;
+      lastSlot = me.slot;
+      const slotCell = newSlot ? esc(me.slot) : '';
+      const serving = me.pieces
+        ? `${me.pieces} × <span class="muted">(${me.grams} g)</span>`
+        : `${me.grams} g`;
+      tb.insertAdjacentHTML('beforeend',
+        `<tr${newSlot ? ' class="slot-start"' : ''}>
+          <td class="slot">${slotCell}</td>
+          <td>${esc(me.name)} <span class="role">${esc(me.role || '')}</span></td>
+          <td>${serving}</td><td>${me.kcal}</td>
+          <td>${me.protein_g}</td><td>${me.carb_g}</td><td>${me.fat_g}</td></tr>`);
+    });
     $('tk').textContent = pl.totals.kcal; $('tp').textContent = pl.totals.protein_g;
     $('tc').textContent = pl.totals.carb_g; $('tf').textContent = pl.totals.fat_g;
     $('planAcc').textContent = `Plan hits ${pl.calorie_accuracy_pct}% of your ${pl.target_calories} kcal target · ${pl.region} · ${pl.diet}.`;
@@ -265,11 +287,11 @@ const App = (() => {
     } catch (err) { box.innerHTML = `<div class="msg err">${err.message}</div>`; }
   }
   function renderRecipe(r) {
-    const ing = r.ingredients.map(i => `<li>${i}</li>`).join('');
-    const steps = r.steps.map(s => `<li>${s}</li>`).join('');
-    const notes = r.health_notes.map(n => `<li>${n}</li>`).join('');
+    const ing = r.ingredients.map(i => `<li>${esc(i)}</li>`).join('');
+    const steps = r.steps.map(s => `<li>${esc(s)}</li>`).join('');
+    const notes = r.health_notes.map(n => `<li>${esc(n)}</li>`).join('');
     $('recipeResult').innerHTML = `
-      <h2>${r.title}</h2>
+      <h2>${esc(r.title)}</h2>
       <div class="tags">
         <span class="pill green">${r.servings} serving(s)</span>
         <span class="pill orange">Budget: ${r.budget_kcal_per_serving} kcal/serving (your body)</span>
@@ -279,13 +301,13 @@ const App = (() => {
       <h2 style="font-size:1rem;margin-top:16px">Ingredients</h2><ul class="reclist">${ing}</ul>
       <h2 style="font-size:1rem">Method</h2><ol>${steps}</ol>
       <h2 style="font-size:1rem">Health notes</h2><ul class="reclist">${notes}</ul>
-      <div class="src">Source: ${r.source}</div>`;
+      <div class="src">Source: ${esc(r.source)}</div>`;
   }
   async function loadRecipes() {
     try {
       const d = await api('GET', '/api/recipes');
       $('recentRecipes').innerHTML = d.recipes.length
-        ? d.recipes.map(x => `<li><b>${x.dish}</b> · ${x.servings} serving(s)
+        ? d.recipes.map(x => `<li><b>${esc(x.dish)}</b> · ${x.servings} serving(s)
             <span class="muted">— ${new Date(x.created + 'Z').toLocaleDateString()}</span></li>`).join('')
         : '<li class="muted">None yet.</li>';
     } catch (_) {}
@@ -300,7 +322,7 @@ const App = (() => {
       const w = $('logWeight').value ? +$('logWeight').value : null;
       const d = await api('POST', '/api/log', { note_text: note, weight_kg: w });
       flash($('logMsg'),
-        `${d.ai.summary} <b>Score: ${d.ai.activity_score}/10.</b> ${d.ai.encouragement}`, 'ok');
+        `${esc(d.ai.summary)} <b>Score: ${d.ai.activity_score}/10.</b> ${esc(d.ai.encouragement)}`, 'ok');
       $('logNote').value = ''; $('logWeight').value = '';
       loadLogs();
     } catch (err) { flash($('logMsg'), err.message); }
@@ -317,9 +339,9 @@ const App = (() => {
         ? `Average activity score: ${d.stats.avg_score}/10 over ${d.stats.count} entries.` : '';
       $('logHistory').innerHTML = d.logs.length ? d.logs.map(l => `
         <div class="logitem"><div class="top">
-          <span class="date">${l.log_date}${l.weight_kg ? ' · ' + l.weight_kg + ' kg' : ''}</span>
+          <span class="date">${esc(l.log_date)}${l.weight_kg ? ' · ' + l.weight_kg + ' kg' : ''}</span>
           <span class="score ${l.activity_score < 5 ? 'low' : ''}">${l.activity_score}/10</span></div>
-          <div style="margin-top:6px">${l.ai_summary || l.note_text}</div></div>`).join('')
+          <div style="margin-top:6px">${esc(l.ai_summary || l.note_text)}</div></div>`).join('')
         : '<p class="muted">No entries yet.</p>';
     } catch (_) {}
   }
@@ -345,9 +367,9 @@ const App = (() => {
       const d = await api('GET', '/api/reviews');
       $('reviewList').innerHTML = d.reviews.length ? d.reviews.map(r => `
         <div class="logitem"><div class="top">
-          <span><b>${r.name}</b> · <span class="muted">${r.feature}</span></span>
+          <span><b>${esc(r.name)}</b> · <span class="muted">${esc(r.feature)}</span></span>
           <span class="pill orange">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span>
-        </div>${r.comment ? `<div style="margin-top:6px">${r.comment}</div>` : ''}</div>`).join('')
+        </div>${r.comment ? `<div style="margin-top:6px">${esc(r.comment)}</div>` : ''}</div>`).join('')
         : '<p class="muted">No reviews yet.</p>';
     } catch (_) {}
   }

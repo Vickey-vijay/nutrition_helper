@@ -44,7 +44,7 @@ echo.
 
 REM --- 3. Create virtual environment ---
 if not exist ".venv" (
-  echo [1/3] Creating virtual environment...
+  echo [1/4] Creating virtual environment...
   %PYEXE% -m venv .venv
   if errorlevel 1 (
     echo [ERROR] Could not create the virtual environment.
@@ -52,37 +52,87 @@ if not exist ".venv" (
     exit /b 1
   )
 ) else (
-  echo [1/3] Virtual environment already exists.
+  echo [1/4] Virtual environment already exists.
 )
 
 REM --- 4. Install dependencies ---
-echo [2/3] Installing dependencies (this can take a minute or two)...
+REM     The local-AI package (llama-cpp-python) sometimes has no pre-built wheel
+REM     and needs a C++ compiler. If the full install fails we retry WITHOUT it,
+REM     because the app still runs on the Groq / rule-based tiers.
+set "LOCALAI=1"
+echo [2/4] Installing dependencies (this can take a minute or two)...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 (
   echo.
-  echo [ERROR] Dependency installation failed.
-  echo         Check your internet connection and try running setup.bat again.
-  echo         If it keeps failing, send the text above to your developer.
-  if not "%~1"=="quiet" pause
-  exit /b 1
+  echo [WARN] The full install failed - usually this is llama-cpp-python,
+  echo        which needs build tools on some machines.
+  echo        Retrying without the local-AI package...
+  echo.
+  set "LOCALAI=0"
+  ".venv\Scripts\python.exe" -c "open('.core-requirements.tmp','w').write(''.join(l for l in open('requirements.txt') if 'llama-cpp-python' not in l))"
+  ".venv\Scripts\python.exe" -m pip install -r .core-requirements.tmp
+  set "CORERC=!errorlevel!"
+  if exist ".core-requirements.tmp" del ".core-requirements.tmp" >nul 2>nul
+  if not "!CORERC!"=="0" (
+    echo.
+    echo [ERROR] Dependency installation failed.
+    echo         Check your internet connection and try running setup.bat again.
+    echo         If it keeps failing, send the text above to your developer.
+    if not "%~1"=="quiet" pause
+    exit /b 1
+  )
 )
 
 REM --- 5. Create .env from template (never overwrite an existing one) ---
 if not exist ".env" (
-  echo [3/3] Creating .env from template...
+  echo [3/4] Creating .env from template...
   copy ".env.example" ".env" >nul
 ) else (
-  echo [3/3] .env already present - leaving it untouched.
+  echo [3/4] .env already present - leaving it untouched.
+)
+
+REM --- 6. Download the local quantised AI model (best effort, never fatal) ---
+REM     A failure here is fine: app/ai.py falls back to Groq and then to the
+REM     built-in rule-based generator, so setup must warn and carry on.
+set "MODELOK=0"
+echo.
+echo [4/4] Downloading local AI model, this is a one-time ~4GB download...
+echo       (a smaller ~2.4GB model is chosen automatically on low-RAM machines)
+echo       You can skip this now and run "python -m app.setup_model" later.
+echo.
+if "!LOCALAI!"=="0" (
+  echo       Skipped: llama-cpp-python is not installed, so the local model
+  echo       could not be used even if it were downloaded.
+) else (
+  ".venv\Scripts\python.exe" -m app.setup_model
+  if errorlevel 1 (
+    echo.
+    echo       [WARN] The local AI model could not be downloaded.
+    echo              This is NOT fatal - setup will continue.
+    echo              The app will use the Groq cloud tier if you set a
+    echo              GROQ_API_KEY in .env, otherwise the built-in
+    echo              rule-based generator. Both work fine.
+    echo              To retry later:  python -m app.setup_model
+  ) else (
+    set "MODELOK=1"
+  )
 )
 
 echo.
 echo ==================================================
 echo    Setup complete!
 echo.
-echo    Optional: open the ".env" file with Notepad and paste
-echo    your GROQ_API_KEY to enable live AI features.
-echo    The app also works with NO key (a built-in fallback is used).
+if "!MODELOK!"=="1" (
+  echo    Local AI is ready - the app runs a quantised model on
+  echo    this computer. No API key needed, works offline, free.
+) else (
+  echo    Local AI is NOT installed. The app still works:
+  echo      - open ".env" with Notepad and paste a GROQ_API_KEY
+  echo        to use the free Groq cloud tier, or
+  echo      - use it as-is with the built-in rule-based generator.
+  echo    To try the local model again:  python -m app.setup_model
+)
 echo.
 echo    Next step: double-click  run.bat
 echo ==================================================

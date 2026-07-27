@@ -119,11 +119,17 @@ def _metrics_from_profile(p: dict) -> dict:
 # ===========================================================================
 @app.get("/api/health")
 def health():
+    ai_state = ai.ai_status()
     return {
         "status": "ok",
         "foods": FOOD_COUNT or db.init_db(),
-        "ai_mode": ai.ai_mode(),
-        "model": os.environ.get("GROQ_MODEL", "—") if ai.ai_enabled() else None,
+        "ai_mode": ai_state["tier"],
+        # Which of the three tiers (local quantised / groq cloud / rules) is
+        # actually serving requests, plus the full chain diagnostics.
+        "ai_tier": ai_state["tier"],
+        "ai_last_tier": ai_state["last_tier"],
+        "ai": ai_state,
+        "model": ai_state["model"],
         "activity_levels": ACTIVITY_LABELS,
         "goals": list(GOAL_ADJUSTMENTS.keys()),
     }

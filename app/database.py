@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS foods (
     region    TEXT NOT NULL,
     diet      TEXT NOT NULL,
     meal_slot TEXT NOT NULL,
+    role      TEXT NOT NULL,
     serving_g REAL NOT NULL,
     kcal      REAL NOT NULL,
     protein_g REAL NOT NULL,
@@ -133,12 +134,34 @@ CREATE TABLE IF NOT EXISTS recipes (
 """
 
 
+def _foods_schema_is_current(cur) -> bool:
+    """True if the existing foods table has every column the seed data needs.
+
+    ``CREATE TABLE IF NOT EXISTS`` is a no-op against a table that already
+    exists, so a database created by an older build keeps its old columns even
+    after the seed dataset gains new ones. Detect that drift explicitly.
+    """
+    cur.execute("PRAGMA table_info(foods)")
+    existing = {row["name"] for row in cur.fetchall()}
+    if not existing:                      # table absent; executescript will make it
+        return True
+    return set(COLUMNS).issubset(existing)
+
+
 def init_db(force: bool = False) -> int:
     """Create all tables and seed foods. Returns number of foods seeded."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = get_conn()
     cur = conn.cursor()
     cur.executescript(_SCHEMA)
+
+    # Migrate the reference table when the dataset schema moves ahead of an
+    # existing database. `foods` is read-only seed data, so rebuilding it is
+    # safe and loses nothing; user tables are never touched here.
+    if not _foods_schema_is_current(cur):
+        cur.execute("DROP TABLE foods")
+        cur.executescript(_SCHEMA)
+        force = True
 
     cur.execute("SELECT COUNT(*) AS c FROM foods")
     have = cur.fetchone()["c"]
@@ -163,13 +186,18 @@ def init_db(force: bool = False) -> int:
 # Foods
 # ---------------------------------------------------------------------------
 def query_foods(region: str | None = None, diet: str | None = None,
-                meal_slot: str | None = None) -> list[dict]:
+                meal_slot: str | None = None,
+                role: str | None = None) -> list[dict]:
     """Fetch foods, optionally filtered. Region match includes Pan-India.
 
     Diet filter is inclusive: vegan ⊂ veg request, etc.
         - 'veg' user accepts: veg, vegan
         - 'vegan' user accepts: vegan only
         - 'nonveg' user accepts: everything
+
+    `role` selects the structural part a dish plays in a meal (staple, main,
+    side, accompaniment, snack, sweet) so the planner can assemble a plate
+    rather than serve a single dish as a whole meal.
     """
     conn = get_conn()
     cur = conn.cursor()
@@ -189,6 +217,10 @@ def query_foods(region: str | None = None, diet: str | None = None,
     if meal_slot:
         sql += " AND meal_slot = ?"
         params.append(meal_slot)
+
+    if role:
+        sql += " AND role = ?"
+        params.append(role)
 
     cur.execute(sql, params)
     rows = [dict(r) for r in cur.fetchall()]

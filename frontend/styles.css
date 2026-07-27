@@ -82,6 +82,13 @@ table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.92rem}
 th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
 th{color:var(--muted);font-weight:700;font-size:.74rem;text-transform:uppercase;letter-spacing:.4px}
 .slot{font-weight:700;color:var(--green-dark);text-transform:capitalize}
+/* Dishes of one meal are grouped: only the first row shows the slot name, and
+   a hairline separates one plate from the next. */
+tbody tr.slot-start td{border-top:1px solid var(--line)}
+tbody tr:not(.slot-start) td{border-bottom:0}
+.role{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;
+  font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.3px;
+  background:var(--green-soft);color:var(--green-dark);vertical-align:1px}
 tfoot td{font-weight:800;border-top:2px solid var(--line)}
 
 /* ---------- Guidance / recipe ---------- */

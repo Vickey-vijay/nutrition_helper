@@ -1,15 +1,34 @@
-"""AI guidance layer for NutriMind AI — LangChain + Groq.
+"""AI guidance layer for NutriMind AI — local quantised LLM, Groq, or rules.
 
-Uses the Groq free-tier LLM (Llama 3.x) orchestrated through LangChain when
-GROQ_API_KEY is configured; otherwise falls back to a deterministic,
-rule-based generator so the system is always fully functional with zero
-configuration and zero cost.
+Final-semester design: a **three-tier fallback chain**, tried in order for every
+request, so the app is free, private and offline-capable when it can be and
+still fully functional when it cannot:
 
-Core design rule (from the project KT note): the LLM writes recipe and
-guidance TEXT only. All calorie/macro NUMBERS come from the IFCT-referenced
+    1. LOCAL   — a 4-bit (Q4_K_M) quantised GGUF running on the CPU through
+                 llama-cpp-python (``app/llm_local.py``). Zero cost, zero
+                 network, data never leaves the machine.
+    2. GROQ    — the mid-semester cloud path (LangChain + Groq Llama 3.x), used
+                 when no local model is installed but an API key is configured.
+    3. RULES   — the deterministic rule-based generator. Always works, needs
+                 nothing installed and no key.
+
+The chain is configured with ``NUTRIMIND_AI_BACKEND`` in ``.env``:
+
+    auto   (default)  local -> groq -> rules
+    local             local -> rules          (never touches the network)
+    groq              groq  -> rules
+    rules             rules only
+
+A tier that is unavailable — llama-cpp-python not installed, the GGUF not
+downloaded, no API key, a call that errors or times out — is skipped silently
+and the next one runs. No configuration can make the app crash or return
+nothing.
+
+Core design rule (unchanged from the mid-semester build): the LLM writes recipe
+and guidance TEXT only. All calorie/macro NUMBERS come from the IFCT-referenced
 database and the Python nutrition engine — never invented by the model. Where
-the model returns an estimate (e.g. a free-text recipe), it is clearly
-labelled "approx" alongside the Python-derived calorie budget.
+the model returns an estimate (e.g. a free-text recipe), it is clearly labelled
+"approx" alongside the Python-derived calorie budget.
 """
 from __future__ import annotations
 import os
@@ -17,8 +36,10 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from . import llm_local
+
 # LangChain / Groq are optional at runtime: if the import or the API call
-# fails for any reason, we degrade gracefully to the rule-based fallback.
+# fails for any reason, we degrade gracefully to the next tier.
 try:
     from langchain_groq import ChatGroq
     from langchain_core.prompts import ChatPromptTemplate
@@ -26,13 +47,120 @@ try:
 except Exception:  # pragma: no cover - only when deps missing
     _LC_AVAILABLE = False
 
+# Source labels, also used as the tier names in /api/health.
+SRC_LOCAL = "local_quantised_llama_cpp"
+SRC_GROQ = "groq_llama_langchain"
+SRC_RULES = "rule_based_fallback"
 
-def ai_enabled() -> bool:
+VALID_BACKENDS = ("auto", "local", "groq", "rules")
+
+# Which tier actually served the most recent request. ``None`` until the first
+# AI call — /api/health reports it as "not yet exercised".
+_LAST_TIER: Optional[str] = None
+
+
+# ===========================================================================
+# Tier selection
+# ===========================================================================
+def backend_preference() -> str:
+    """The configured ``NUTRIMIND_AI_BACKEND`` (unknown values fall back to auto)."""
+    value = (os.environ.get("NUTRIMIND_AI_BACKEND") or "auto").strip().lower()
+    return value if value in VALID_BACKENDS else "auto"
+
+
+def local_available() -> bool:
+    """True if the local quantised model could serve a request (cheap check)."""
+    return llm_local.available()
+
+
+def groq_available() -> bool:
     return _LC_AVAILABLE and bool(os.environ.get("GROQ_API_KEY"))
 
 
+def _tier_order() -> list:
+    """Tiers to try, in order, for the configured backend preference.
+
+    ``local`` deliberately does NOT chain to Groq: someone who pins the backend
+    to local is asking for offline/private operation, and silently calling a
+    cloud API would break that guarantee. It falls straight through to rules.
+    """
+    pref = backend_preference()
+    if pref == "local":
+        return [SRC_LOCAL, SRC_RULES]
+    if pref == "groq":
+        return [SRC_GROQ, SRC_RULES]
+    if pref == "rules":
+        return [SRC_RULES]
+    return [SRC_LOCAL, SRC_GROQ, SRC_RULES]
+
+
+def active_tier() -> str:
+    """The tier that would serve a request right now."""
+    for tier in _tier_order():
+        if tier == SRC_LOCAL and local_available():
+            return SRC_LOCAL
+        if tier == SRC_GROQ and groq_available():
+            return SRC_GROQ
+        if tier == SRC_RULES:
+            return SRC_RULES
+    return SRC_RULES
+
+
+def ai_enabled() -> bool:
+    """True if a real LLM tier (local or cloud) is available."""
+    return active_tier() in (SRC_LOCAL, SRC_GROQ)
+
+
 def ai_mode() -> str:
-    return "groq_llama_langchain" if ai_enabled() else "rule_based_fallback"
+    """Human/machine-readable name of the tier currently in front."""
+    return active_tier()
+
+
+def ai_status() -> dict:
+    """Full AI-layer diagnostics for ``/api/health``.
+
+    ``tier`` is what the next request will use; ``last_tier`` is what the most
+    recent request actually used (they differ if, say, the local model is
+    installed but the load failed mid-session).
+    """
+    tier = active_tier()
+    local = llm_local.status()
+    if tier == SRC_LOCAL:
+        model = local.get("model_file")
+    elif tier == SRC_GROQ:
+        model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    else:
+        model = None
+    return {
+        "tier": tier,
+        "backend_preference": backend_preference(),
+        "chain": _tier_order(),
+        "last_tier": _LAST_TIER,
+        "model": model,
+        "local": local,
+        "groq": {
+            "available": groq_available(),
+            "langchain_installed": _LC_AVAILABLE,
+            "api_key_set": bool(os.environ.get("GROQ_API_KEY")),
+            "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        },
+        "rules": {"available": True},
+    }
+
+
+def _record(tier: str) -> str:
+    global _LAST_TIER
+    _LAST_TIER = tier
+    return tier
+
+
+def _try(tier: str) -> bool:
+    """Should we attempt ``tier`` for this request?"""
+    if tier == SRC_LOCAL:
+        return llm_local.available()
+    if tier == SRC_GROQ:
+        return groq_available()
+    return True
 
 
 def _model(temperature: float = 0.4, max_tokens: int = 700):
@@ -43,6 +171,12 @@ def _model(temperature: float = 0.4, max_tokens: int = 700):
         timeout=30,
         max_retries=1,
     )
+
+
+DIETITIAN_SYSTEM = (
+    "You are a registered Indian dietitian and healthy home-cooking chef. "
+    "Be concise, practical and evidence-based. Never invent calorie numbers."
+)
 
 
 # ===========================================================================
@@ -71,15 +205,31 @@ def _guidance_prompt(plan: dict, metrics: dict, prefs: dict) -> str:
 
 def meal_guidance(plan: dict, metrics: dict, prefs: dict | None = None) -> dict:
     prefs = prefs or {"liked": [], "disliked": []}
-    if ai_enabled():
-        try:
-            msg = _model(0.4, 450).invoke(_guidance_prompt(plan, metrics, prefs))
-            text = (msg.content or "").strip()
+    prompt = _guidance_prompt(plan, metrics, prefs)
+
+    for tier in _tier_order():
+        if not _try(tier):
+            continue
+
+        if tier == SRC_LOCAL:
+            text = llm_local.chat(prompt, system=DIETITIAN_SYSTEM,
+                                  temperature=0.4, max_tokens=450)
             if text:
-                return {"source": "groq_llama_langchain", "guidance": text}
-        except Exception:
-            pass
-    return {"source": "rule_based_fallback",
+                return {"source": _record(SRC_LOCAL), "guidance": text}
+
+        elif tier == SRC_GROQ:
+            try:
+                msg = _model(0.4, 450).invoke(prompt)
+                text = (msg.content or "").strip()
+                if text:
+                    return {"source": _record(SRC_GROQ), "guidance": text}
+            except Exception:
+                pass
+
+        else:
+            break
+
+    return {"source": _record(SRC_RULES),
             "guidance": _rule_based_guidance(plan, metrics["bmi_category"])}
 
 
@@ -91,26 +241,48 @@ class GoalOut(BaseModel):
     rationale: str = Field(description="one short sentence, friendly tone")
 
 
+def _goal_prompt(metrics: dict, cat: str) -> str:
+    return (
+        "A user has BMI "
+        f"{metrics['bmi']} (category {cat}), BMR "
+        f"{metrics['bmr']} kcal and TDEE {metrics['tdee']} kcal. "
+        "Recommend a single weight goal (lose, maintain, or gain) and "
+        "a one-sentence rationale. Be safe and evidence-based."
+    )
+
+
 def suggest_goal(metrics: dict) -> dict:
     """Let the AI recommend lose/maintain/gain from the biometric picture."""
     cat = metrics["bmi_category"]
-    if ai_enabled():
-        try:
-            llm = _model(0.2, 200).with_structured_output(GoalOut)
-            prompt = (
-                "A user has BMI "
-                f"{metrics['bmi']} (category {cat}), BMR "
-                f"{metrics['bmr']} kcal and TDEE {metrics['tdee']} kcal. "
-                "Recommend a single weight goal (lose, maintain, or gain) and "
-                "a one-sentence rationale. Be safe and evidence-based."
-            )
-            out: GoalOut = llm.invoke(prompt)
-            goal = out.goal.lower().strip()
-            if goal in ("lose", "maintain", "gain"):
-                return {"source": "groq_llama_langchain", "goal": goal,
-                        "rationale": out.rationale.strip()}
-        except Exception:
-            pass
+    prompt = _goal_prompt(metrics, cat)
+
+    for tier in _tier_order():
+        if not _try(tier):
+            continue
+
+        if tier == SRC_LOCAL:
+            out = llm_local.chat_json(prompt, GoalOut, system=DIETITIAN_SYSTEM,
+                                      temperature=0.2, max_tokens=200)
+            if out:
+                goal = out.goal.lower().strip()
+                if goal in ("lose", "maintain", "gain"):
+                    return {"source": _record(SRC_LOCAL), "goal": goal,
+                            "rationale": out.rationale.strip()}
+
+        elif tier == SRC_GROQ:
+            try:
+                llm = _model(0.2, 200).with_structured_output(GoalOut)
+                out: GoalOut = llm.invoke(prompt)
+                goal = out.goal.lower().strip()
+                if goal in ("lose", "maintain", "gain"):
+                    return {"source": _record(SRC_GROQ), "goal": goal,
+                            "rationale": out.rationale.strip()}
+            except Exception:
+                pass
+
+        else:
+            break
+
     # Deterministic clinical fallback
     rule = {
         "Underweight": ("gain", "Your BMI is below the healthy range, so a lean "
@@ -123,7 +295,7 @@ def suggest_goal(metrics: dict) -> dict:
                                "reduce health risk."),
     }
     goal, why = rule.get(cat, ("maintain", "Maintain a balanced intake."))
-    return {"source": "rule_based_fallback", "goal": goal, "rationale": why}
+    return {"source": _record(SRC_RULES), "goal": goal, "rationale": why}
 
 
 # ===========================================================================
@@ -140,36 +312,63 @@ class RecipeOut(BaseModel):
     prep_time_min: int
 
 
+_RECIPE_SYSTEM = (
+    "You are a healthy Indian home-cooking chef and dietitian. "
+    "Produce the healthiest practical version of the requested "
+    "dish: minimal oil, whole ingredients, balanced macros. "
+    "Respect the dietary preference strictly."
+)
+
+_RECIPE_HUMAN = (
+    "Dish: {dish}\nServings: {servings}\nDietary preference: {diet}\n"
+    "Target calorie budget per serving: about {budget} kcal "
+    "(suited to this user's body).\n"
+    "Give quantified ingredients for exactly {servings} serving(s), "
+    "clear method steps, 2-3 health notes, an approximate kcal per "
+    "serving, and prep time in minutes."
+)
+
+
 def generate_recipe(dish: str, metrics: dict, servings: int,
                     diet: str, budget_kcal: int) -> dict:
     """Healthiest version of `dish`, scaled to `servings`, designed to fit the
     Python-derived per-serving calorie `budget_kcal`."""
-    if ai_enabled():
-        try:
-            llm = _model(0.5, 800).with_structured_output(RecipeOut)
-            prompt = ChatPromptTemplate.from_messages([
-                ("system",
-                 "You are a healthy Indian home-cooking chef and dietitian. "
-                 "Produce the healthiest practical version of the requested "
-                 "dish: minimal oil, whole ingredients, balanced macros. "
-                 "Respect the dietary preference strictly."),
-                ("human",
-                 "Dish: {dish}\nServings: {servings}\nDietary preference: {diet}\n"
-                 "Target calorie budget per serving: about {budget} kcal "
-                 "(suited to this user's body).\n"
-                 "Give quantified ingredients for exactly {servings} serving(s), "
-                 "clear method steps, 2-3 health notes, an approximate kcal per "
-                 "serving, and prep time in minutes."),
-            ])
-            out: RecipeOut = (prompt | llm).invoke({
-                "dish": dish, "servings": servings, "diet": diet,
-                "budget": budget_kcal})
-            data = out.model_dump()
-            data["source"] = "groq_llama_langchain"
-            data["budget_kcal_per_serving"] = budget_kcal
-            return data
-        except Exception:
-            pass
+    fields = {"dish": dish, "servings": servings, "diet": diet,
+              "budget": budget_kcal}
+
+    for tier in _tier_order():
+        if not _try(tier):
+            continue
+
+        if tier == SRC_LOCAL:
+            out = llm_local.chat_json(_RECIPE_HUMAN.format(**fields), RecipeOut,
+                                      system=_RECIPE_SYSTEM, temperature=0.5,
+                                      max_tokens=900)
+            if out and out.ingredients and out.steps:
+                data = out.model_dump()
+                data["source"] = _record(SRC_LOCAL)
+                data["budget_kcal_per_serving"] = budget_kcal
+                return data
+
+        elif tier == SRC_GROQ:
+            try:
+                llm = _model(0.5, 800).with_structured_output(RecipeOut)
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", _RECIPE_SYSTEM),
+                    ("human", _RECIPE_HUMAN),
+                ])
+                out: RecipeOut = (prompt | llm).invoke(fields)
+                data = out.model_dump()
+                data["source"] = _record(SRC_GROQ)
+                data["budget_kcal_per_serving"] = budget_kcal
+                return data
+            except Exception:
+                pass
+
+        else:
+            break
+
+    _record(SRC_RULES)
     return _rule_based_recipe(dish, servings, diet, budget_kcal)
 
 
@@ -183,18 +382,41 @@ class LogOut(BaseModel):
 
 
 def summarize_log(note_text: str) -> dict:
-    if ai_enabled():
-        try:
-            llm = _model(0.3, 200).with_structured_output(LogOut)
-            out: LogOut = llm.invoke(
-                "Summarise this fitness/diet diary note in one line, rate the "
-                "day's effort and consistency from 1 (none) to 10 (excellent), "
-                "and add one motivating sentence.\n\nNote: " + note_text)
-            score = max(1, min(10, int(out.activity_score)))
-            return {"source": "groq_llama_langchain", "summary": out.summary.strip(),
-                    "activity_score": score, "encouragement": out.encouragement.strip()}
-        except Exception:
-            pass
+    prompt = (
+        "Summarise this fitness/diet diary note in one line, rate the "
+        "day's effort and consistency from 1 (none) to 10 (excellent), "
+        "and add one motivating sentence.\n\nNote: " + note_text)
+
+    for tier in _tier_order():
+        if not _try(tier):
+            continue
+
+        if tier == SRC_LOCAL:
+            out = llm_local.chat_json(prompt, LogOut, system=DIETITIAN_SYSTEM,
+                                      temperature=0.3, max_tokens=250)
+            if out and out.summary.strip():
+                score = max(1, min(10, int(out.activity_score)))
+                return {"source": _record(SRC_LOCAL),
+                        "summary": out.summary.strip(),
+                        "activity_score": score,
+                        "encouragement": out.encouragement.strip()}
+
+        elif tier == SRC_GROQ:
+            try:
+                llm = _model(0.3, 200).with_structured_output(LogOut)
+                out: LogOut = llm.invoke(prompt)
+                score = max(1, min(10, int(out.activity_score)))
+                return {"source": _record(SRC_GROQ),
+                        "summary": out.summary.strip(),
+                        "activity_score": score,
+                        "encouragement": out.encouragement.strip()}
+            except Exception:
+                pass
+
+        else:
+            break
+
+    _record(SRC_RULES)
     return _rule_based_log(note_text)
 
 
@@ -247,7 +469,7 @@ def _rule_based_guidance(plan: dict, bmi_category: str) -> str:
 def _rule_based_recipe(dish: str, servings: int, diet: str,
                        budget_kcal: int) -> dict:
     return {
-        "source": "rule_based_fallback",
+        "source": SRC_RULES,
         "title": f"Healthy {dish.title()}",
         "servings": servings,
         "budget_kcal_per_serving": budget_kcal,
@@ -288,5 +510,5 @@ def _rule_based_log(note_text: str) -> dict:
     enc = ("Great consistency — keep the momentum!" if score >= 7
            else "Good effort — small steps add up, keep going!" if score >= 4
            else "Tomorrow is a fresh start — aim for one healthy choice.")
-    return {"source": "rule_based_fallback", "summary": summary,
+    return {"source": SRC_RULES, "summary": summary,
             "activity_score": score, "encouragement": enc}
