@@ -312,7 +312,7 @@ def add_review(body: ReviewIn, user: dict = Depends(current_user)):
 
 @app.get("/api/reviews")
 def get_reviews(user: dict = Depends(current_user)):
-    return {"reviews": db.list_reviews()}
+    return {"reviews": db.list_reviews(user["id"])}
 
 
 # ===========================================================================

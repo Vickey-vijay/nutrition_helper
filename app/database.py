@@ -427,13 +427,19 @@ def add_review(user_id: int, feature: str, rating: int, comment: str) -> int:
     return rid
 
 
-def list_reviews(limit: int = 30) -> list[dict]:
+def list_reviews(user_id: int, limit: int = 30) -> list[dict]:
+    """Reviews written by one user, newest first.
+
+    Scoped to the owner deliberately: this is a personal health app, and a
+    review comment can disclose what someone is eating or trying to change
+    about their body. Nobody else's feedback is visible.
+    """
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
         "SELECT r.feature,r.rating,r.comment,r.created,u.name "
         "FROM reviews r JOIN users u ON u.id = r.user_id "
-        "ORDER BY r.id DESC LIMIT ?", (limit,))
+        "WHERE r.user_id = ? ORDER BY r.id DESC LIMIT ?", (user_id, limit))
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows

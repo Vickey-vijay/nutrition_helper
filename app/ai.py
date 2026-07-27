@@ -493,6 +493,10 @@ def _rule_based_recipe(dish: str, servings: int, diet: str,
         "health_notes": [
             "Use minimal oil and prefer steaming/roasting over frying.",
             f"Portion to about {budget_kcal} kcal per serving for your body.",
+            # Curd is dairy, so the balance suggestion has to respect a vegan
+            # request the same way the LLM path is instructed to.
+            "Add a side salad or a lentil side for fibre and protein balance."
+            if diet == "vegan" else
             "Add a side salad or curd for fibre and protein balance.",
         ],
     }

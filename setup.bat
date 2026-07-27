@@ -56,13 +56,18 @@ if not exist ".venv" (
 )
 
 REM --- 4. Install dependencies ---
-REM     The local-AI package (llama-cpp-python) sometimes has no pre-built wheel
-REM     and needs a C++ compiler. If the full install fails we retry WITHOUT it,
-REM     because the app still runs on the Groq / rule-based tiers.
+REM     llama-cpp-python ships no wheel on PyPI for many Windows/Python combos,
+REM     so pip tries to compile it and fails on any machine without CMake and a
+REM     C++ toolchain. The project's own wheel index carries pre-built CPU
+REM     wheels, so we point pip at it first - that is what makes the local AI
+REM     tier install on a plain client machine with no build tools.
+REM     If it still fails we retry WITHOUT it: the app runs on the Groq /
+REM     rule-based tiers regardless.
 set "LOCALAI=1"
+set "LLAMA_WHEELS=https://abetlen.github.io/llama-cpp-python/whl/cpu"
 echo [2/4] Installing dependencies (this can take a minute or two)...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+".venv\Scripts\python.exe" -m pip install -r requirements.txt --extra-index-url %LLAMA_WHEELS%
 if errorlevel 1 (
   echo.
   echo [WARN] The full install failed - usually this is llama-cpp-python,
