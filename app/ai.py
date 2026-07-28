@@ -80,9 +80,18 @@ def groq_available() -> bool:
 def _tier_order() -> list:
     """Tiers to try, in order, for the configured backend preference.
 
+    ``auto`` puts Groq ahead of the local model on purpose. Measured on CPU,
+    the quantised 7B answers a log summary in about 32 s and a recipe in about
+    four and a half minutes (see docs/08_LOCAL_LLM_BENCHMARK.md), against
+    roughly a second for the cloud tier. Trying local first would make an
+    ordinary session feel broken, so ``auto`` means "the fastest tier that
+    works" and the local model is what keeps the app running when there is no
+    key and no network.
+
     ``local`` deliberately does NOT chain to Groq: someone who pins the backend
     to local is asking for offline/private operation, and silently calling a
     cloud API would break that guarantee. It falls straight through to rules.
+    That setting is also how the offline, zero-cost claim is demonstrated.
     """
     pref = backend_preference()
     if pref == "local":
@@ -91,7 +100,7 @@ def _tier_order() -> list:
         return [SRC_GROQ, SRC_RULES]
     if pref == "rules":
         return [SRC_RULES]
-    return [SRC_LOCAL, SRC_GROQ, SRC_RULES]
+    return [SRC_GROQ, SRC_LOCAL, SRC_RULES]
 
 
 def active_tier() -> str:
