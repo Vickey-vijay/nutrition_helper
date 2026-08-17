@@ -54,9 +54,9 @@ echo Using Python %PYVER%
 echo.
 
 REM --- 3. Create virtual environment ---
-REM     Test for the interpreter, not the folder: an install interrupted part
-REM     way through leaves a .venv directory with no python.exe inside it, and
-REM     every later step would then fail with a confusing error.
+REM     Test for the interpreter, not just the folder: an install interrupted
+REM     part way through leaves a .venv directory with no python.exe inside
+REM     it, and every later step would then fail with a confusing error.
 if not exist ".venv\Scripts\python.exe" (
   if exist ".venv" (
     echo [1/4] Repairing an incomplete virtual environment...
@@ -72,6 +72,35 @@ if not exist ".venv\Scripts\python.exe" (
   )
 ) else (
   echo [1/4] Virtual environment already exists.
+)
+
+REM     python.exe existing is not enough: antivirus quarantine or an
+REM     interrupted venv creation can leave pip's own internal modules
+REM     missing inside an otherwise-present environment (seen on a client
+REM     machine as "ModuleNotFoundError: No module named 'pip._internal.cli'").
+REM     Detect that specifically and rebuild once before giving up, so this
+REM     self-heals instead of needing someone to manually delete .venv.
+".venv\Scripts\python.exe" -m pip --version >nul 2>nul
+if errorlevel 1 (
+  echo        Existing environment has a broken pip - rebuilding it...
+  rmdir /s /q ".venv"
+  %PYEXE% -m venv .venv
+  if errorlevel 1 (
+    echo [ERROR] Could not recreate the virtual environment.
+    if not "%~1"=="quiet" pause
+    exit /b 1
+  )
+  ".venv\Scripts\python.exe" -m pip --version >nul 2>nul
+  if errorlevel 1 (
+    echo [ERROR] pip is still broken after rebuilding the environment.
+    echo         This usually means antivirus is blocking Python from writing
+    echo         files here, or this folder is on a sync drive ^(Dropbox,
+    echo         OneDrive^) that is interfering with file creation.
+    echo         Try: pause any antivirus/sync temporarily, or move this
+    echo         folder out of Dropbox/OneDrive, then run setup.bat again.
+    if not "%~1"=="quiet" pause
+    exit /b 1
+  )
 )
 
 REM --- 4. Install dependencies ---
