@@ -22,8 +22,25 @@ const App = (() => {
     });
     if (res.status === 401) { doLogout(); throw new Error('Session expired'); }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || ('Request failed (' + res.status + ')'));
+    if (!res.ok) throw new Error(errorText(data, res.status));
     return data;
+  }
+
+  // FastAPI returns `detail` as a plain string for our own HTTPExceptions, but
+  // as an array of Pydantic error objects for validation failures. Rendering
+  // that array straight into a message produced "[object Object]", so pull the
+  // human-readable part out and name the field that was rejected.
+  function errorText(data, status) {
+    const d = data && data.detail;
+    if (typeof d === 'string' && d) return d;
+    if (Array.isArray(d) && d.length) {
+      return d.map(e => {
+        const field = Array.isArray(e.loc) ? e.loc[e.loc.length - 1] : null;
+        const msg = (e.msg || 'is not valid').replace(/^Value error,\s*/i, '');
+        return field && field !== 'body' ? `${field}: ${msg}` : msg;
+      }).join('; ');
+    }
+    return 'Request failed (' + status + ')';
   }
 
   // `text` may intentionally contain trusted markup (e.g. a spinner span) —
@@ -222,8 +239,11 @@ const App = (() => {
       const newSlot = me.slot !== lastSlot;
       lastSlot = me.slot;
       const slotCell = newSlot ? esc(me.slot) : '';
+      // `grams` is already the total across all pieces, so writing it as
+      // "2 x (240 g)" read as 480 g. Show the total, with the piece count as a
+      // parenthetical note.
       const serving = me.pieces
-        ? `${me.pieces} × <span class="muted">(${me.grams} g)</span>`
+        ? `${me.grams} g <span class="muted">(${me.pieces} pc${me.pieces > 1 ? 's' : ''})</span>`
         : `${me.grams} g`;
       tb.insertAdjacentHTML('beforeend',
         `<tr${newSlot ? ' class="slot-start"' : ''}>

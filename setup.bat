@@ -28,12 +28,21 @@ if not defined PYEXE (
   exit /b 1
 )
 
-REM --- 2. Check the Python version is new enough ---
-%PYEXE% -c "import sys; sys.exit(0 if sys.version_info >= (3,9) else 1)" >nul 2>nul
+REM --- 2. Check Python actually runs and is new enough ---
+REM     A machine with no real Python still resolves "python" on PATH to the
+REM     Microsoft Store app-execution alias, which exits without running
+REM     anything. Executing it is the only way to tell the difference.
+%PYEXE% -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] A Python installation was found, but it is older than 3.9.
-  echo         Please install Python 3.10+ from https://www.python.org/downloads/
-  echo         and make sure it is first on PATH, then run setup.bat again.
+  echo [ERROR] No working Python 3.10+ was found.
+  echo         A "python" command exists on PATH but either does not run or is
+  echo         too old. If Windows opens the Microsoft Store when you type
+  echo         "python", install real Python instead:
+  echo.
+  echo           https://www.python.org/downloads/
+  echo           (tick "Add python.exe to PATH" during installation)
+  echo.
+  echo         Then close this window, open a new one, and run setup.bat again.
   echo.
   if not "%~1"=="quiet" pause
   exit /b 1
@@ -43,8 +52,16 @@ echo Using Python %PYVER%
 echo.
 
 REM --- 3. Create virtual environment ---
-if not exist ".venv" (
-  echo [1/4] Creating virtual environment...
+REM     Test for the interpreter, not the folder: an install interrupted part
+REM     way through leaves a .venv directory with no python.exe inside it, and
+REM     every later step would then fail with a confusing error.
+if not exist ".venv\Scripts\python.exe" (
+  if exist ".venv" (
+    echo [1/4] Repairing an incomplete virtual environment...
+    rmdir /s /q ".venv"
+  ) else (
+    echo [1/4] Creating virtual environment...
+  )
   %PYEXE% -m venv .venv
   if errorlevel 1 (
     echo [ERROR] Could not create the virtual environment.
@@ -102,9 +119,13 @@ REM     A failure here is fine: app/ai.py falls back to Groq and then to the
 REM     built-in rule-based generator, so setup must warn and carry on.
 set "MODELOK=0"
 echo.
-echo [4/4] Downloading local AI model, this is a one-time ~4GB download...
+echo [4/4] Downloading the local AI model - a one-time download of about 4 GB.
 echo       (a smaller ~2.4GB model is chosen automatically on low-RAM machines)
-echo       You can skip this now and run "python -m app.setup_model" later.
+echo       Depending on your connection this can take 10-40 minutes. It is safe
+echo       to leave it running. The app works without it, so if it fails or you
+echo       stop it, setup still finishes and you can fetch it later with:
+echo           .venv\Scripts\python.exe -m app.setup_model
+echo       To skip it deliberately, set NUTRIMIND_SKIP_MODEL_DOWNLOAD=1 first.
 echo.
 if "!LOCALAI!"=="0" (
   echo       Skipped: llama-cpp-python is not installed, so the local model

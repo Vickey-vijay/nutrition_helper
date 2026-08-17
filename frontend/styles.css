@@ -64,7 +64,13 @@ textarea{resize:vertical;min-height:90px}
 .avatar{width:34px;height:34px;border-radius:50%;background:var(--green);color:#fff;
   display:flex;align-items:center;justify-content:center;font-weight:700}
 .container{max-width:980px;margin:22px auto;padding:0 18px}
-@media(max-width:680px){.topbar{flex-wrap:wrap}.nav{order:3;width:100%}}
+/* `flex:1` above sets flex-basis:0, which beat the width:100% here and left the
+   nav squeezed into a narrow column beside the avatar. Set the basis itself. */
+@media(max-width:680px){.topbar{flex-wrap:wrap}.nav{order:3;flex:1 1 100%}}
+/* Wide result tables scroll inside their own box rather than making the whole
+   page scroll sideways on a phone. */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tablewrap table{min-width:520px}
 
 /* ---------- Stats ---------- */
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}

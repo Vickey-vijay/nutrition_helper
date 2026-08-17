@@ -7,7 +7,7 @@ all calorie/macro numbers come from the IFCT-referenced database.
 """
 from __future__ import annotations
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -54,16 +54,20 @@ class LoginIn(BaseModel):
 
 
 class ProfileIn(BaseModel):
+    # These are closed sets, not free text: an unrecognised activity or goal
+    # would fall through to a default multiplier and silently produce a wrong
+    # calorie target, and an unrecognised region/diet would quietly filter the
+    # food query down to nothing. Reject them at the edge instead.
     dob: Optional[str] = None             # YYYY-MM-DD
     age: Optional[int] = Field(default=None, ge=10, le=100)
-    sex: str
+    sex: Literal["male", "female"]
     height_cm: float = Field(gt=80, lt=250)
     weight_kg: float = Field(gt=20, lt=300)
-    activity: str = "moderate"
-    goal: str = "maintain"
-    diet: str = "veg"
-    region: str = "Pan-India"
-    allergies: Optional[str] = None
+    activity: Literal["sedentary", "light", "moderate", "very", "extra"] = "moderate"
+    goal: Literal["lose", "maintain", "gain"] = "maintain"
+    diet: Literal["veg", "nonveg", "vegan"] = "veg"
+    region: Literal["North", "South", "East", "West", "Pan-India"] = "Pan-India"
+    allergies: Optional[str] = Field(default=None, max_length=300)
 
 
 class PrefsIn(BaseModel):
@@ -289,6 +293,13 @@ def recipe_history(user: dict = Depends(current_user)):
 @app.post("/api/log")
 def add_log(body: LogIn, user: dict = Depends(current_user)):
     import datetime
+    # Entries are ordered and charted by log_date as a string, so a non-ISO
+    # value would sort into the wrong place in the history and trend.
+    if body.log_date:
+        try:
+            datetime.date.fromisoformat(body.log_date)
+        except ValueError:
+            raise HTTPException(422, "log_date must be in YYYY-MM-DD format")
     log_date = body.log_date or datetime.date.today().isoformat()
     summ = ai.summarize_log(body.note_text)
     lid = db.add_log(user["id"], log_date, body.note_text, summ["summary"],

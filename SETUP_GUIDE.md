@@ -3,6 +3,10 @@
 A step-by-step guide to get NutriMind AI running on a Windows computer. No coding
 knowledge required.
 
+> **In a hurry?** Install Python (below), then double-click **`start.bat`** —
+> it installs everything and launches the app in one step. `setup.bat` +
+> `run.bat` do the same thing as two separate steps.
+
 ## Before you start
 
 You need **one thing** installed: **Python 3.10 or newer**.
@@ -26,25 +30,49 @@ That's it — no Node.js, no other tools needed.
 ## Step 2 — Run the setup
 
 1. Double-click **`setup.bat`**.
-2. A black command-prompt window will open and install everything needed.
-   This takes 1–2 minutes and only needs to be done once.
-3. When it says **"Setup complete!"**, you're done with this step.
+2. A black command-prompt window opens and installs everything needed.
+   It runs in two parts:
+   - **Dependencies** — about 1–2 minutes.
+   - **The local AI model** — a one-time download of roughly **4 GB**, which
+     can take **10–40 minutes** depending on your connection. This is normal;
+     leave the window running. On machines with under 8 GB of RAM a smaller
+     ~2.4 GB model is chosen automatically.
+3. When it says **"Setup complete"**, this step is done and never needs
+   repeating.
+
+> **The download is optional.** If it fails, you stop it, or you have no
+> internet, setup still finishes and the app still works — it simply uses one
+> of the other AI options in Step 3. To fetch the model later, run
+> `.venv\Scripts\python.exe -m app.setup_model` from the project folder.
 
 > If Windows shows a security pop-up ("Windows protected your PC"), click
 > **More info → Run anyway**. This happens because the file was downloaded from
 > the internet — it is safe, it only installs the app's own dependencies.
 
-## Step 3 — (Optional) Enable live AI
+## Step 3 — (Optional) Choose how the AI runs
 
-The app works immediately with no extra setup, using a built-in fallback for
-its AI features. To enable the full live AI experience:
+The app has three ways of producing its recipes, meal guidance and daily
+summaries, and it picks the best one available on its own. **You do not have to
+do anything here** — it works out of the box.
+
+| Option | Speed | Needs | Notes |
+|---|---|---|---|
+| **Groq cloud** | ~1 second | a free key + internet | fastest; used first when available |
+| **Local AI model** | 30 s – 4 min | the model from Step 2 | works completely offline, costs nothing |
+| **Built-in fallback** | instant | nothing | always available; no setup at all |
+
+To enable the fast cloud option:
 
 1. In the project folder, open the **`.env`** file with Notepad.
-2. Find the line `GROQ_API_KEY=` and paste your key right after the `=`, e.g.:
+2. Find the line `GROQ_API_KEY=` and paste your key right after the `=`, e.g.
    `GROQ_API_KEY=gsk_your_key_here`
 3. Save the file and close Notepad.
 
 (A free key can be created at <https://console.groq.com>.)
+
+To force the app to run **fully offline** using only the local model, set
+`NUTRIMIND_AI_BACKEND=local` in the same `.env` file. Answers then take longer,
+but nothing leaves your computer.
 
 ## Step 4 — Run the app
 
