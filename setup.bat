@@ -40,7 +40,9 @@ if errorlevel 1 (
   echo         "python", install real Python instead:
   echo.
   echo           https://www.python.org/downloads/
-  echo           (tick "Add python.exe to PATH" during installation)
+  REM Parentheses must be escaped inside a parenthesised if-block or cmd
+  REM treats them as the end of the block.
+  echo           ^(tick "Add python.exe to PATH" during installation^)
   echo.
   echo         Then close this window, open a new one, and run setup.bat again.
   echo.
